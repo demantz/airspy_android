@@ -68,11 +68,11 @@ import java.util.concurrent.TimeUnit;
 public class Airspy implements Runnable {
 
 	// Sample types:
-	public static final int AIRSPY_SAMPLE_FLOAT32_IQ = 0;    // 2 * 32bit float per sample
-	public static final int AIRSPY_SAMPLE_FLOAT32_REAL = 1;    // 1 * 32bit float per sample
-	public static final int AIRSPY_SAMPLE_INT16_IQ = 2;    // 2 * 16bit int per sample
-	public static final int AIRSPY_SAMPLE_INT16_REAL = 3;    // 1 * 16bit int per sample
-	public static final int AIRSPY_SAMPLE_UINT16_REAL = 4;    // 1 * 16bit unsigned int per sample (raw)
+	public static final int AIRSPY_SAMPLE_FLOAT32_IQ = 0;		// 2 * 32bit float per sample
+	public static final int AIRSPY_SAMPLE_FLOAT32_REAL = 1;		// 1 * 32bit float per sample
+	public static final int AIRSPY_SAMPLE_INT16_IQ = 2;			// 2 * 16bit int per sample
+	public static final int AIRSPY_SAMPLE_INT16_REAL = 3;		// 1 * 16bit int per sample
+	public static final int AIRSPY_SAMPLE_UINT16_REAL = 4;		// 1 * 16bit unsigned int per sample (raw)
 
 	// Attributes to hold the USB related objects:
 	private UsbManager usbManager = null;
@@ -297,9 +297,12 @@ public class Airspy implements Runnable {
 	}
 
 	/**
-	 * This returns the size of the packets that received by the
-	 * user (AFTER conversion / unpacking was done!).
-	 * Note that the size is measured in bytes.
+	 * This returns the size of the packets that are received by the
+	 * application from the airspy (AFTER unpacking was done!).
+	 * Note that the size is measured in bytes and does not account
+	 * for the type conversion that is done by the Converter classes.
+	 * (i.e. the size is correct for all int16 sample_types but has
+	 * to be multiplyed by 2 to fit the float32 sample_types!)
 	 *
 	 * @return Packet size in Bytes
 	 */
@@ -433,6 +436,16 @@ public class Airspy implements Runnable {
 		return true;
 	}
 
+	/**
+	 * Enables / Disables raw-mode. It raw mode is enabled, the user can access
+	 * the usbQueue directly (conversion threads are not started / bypassed).
+	 *
+	 * Note that the raw mode can only be changed if the Airspy is currently
+	 * in receiver mode OFF!
+	 *
+	 * @param enabled	true to enable raw mode, false to disable raw mode
+	 * @return true on success, false on error
+	 */
 	public boolean setRawMode(boolean enabled) {
 		if (receiverMode != AIRSPY_RECEIVER_MODE_OFF) {
 			Log.e(LOGTAG, "setRawMode: Airspy is not in receiver mode OFF. Cannot change rawMode!");
@@ -797,6 +810,8 @@ public class Airspy implements Runnable {
 	/**
 	 * Enables / Disables packing for the Airspy. This is only possible if the
 	 * receiver mode is currently OFF!
+	 * If packing is enabled, the Airspy will compress the samples before sending
+	 * them via USB. The Converter threads will unpack the samples automatically.
 	 * <p/>
 	 * Note: This function interacts with the USB Hardware and
 	 * should not be called from a GUI Thread!
@@ -881,6 +896,10 @@ public class Airspy implements Runnable {
 
 	/**
 	 * Starts receiving.
+	 *
+	 * After calling this function the user should also call getFloatQueue()/getInt16Queue()/getRawQueue()
+	 * to read the received samples and getFloatReturnPoolQueue()/getInt16ReturnPoolQueue()/
+	 * getRawReturnPoolQueue() to return used buffers to the Airspy class.
 	 *
 	 * @throws AirspyUsbException
 	 */
@@ -1021,10 +1040,10 @@ public class Airspy implements Runnable {
 				buffer = (ByteBuffer) request.getClientData();
 
 				// Increment the packetCounter (for statistics)
-				// TODO: move this to correct location (after conversion?)
 				this.receivePacketCounter++;
 
-				// Put the received samples into the usbQueue, so that they can be read by the application
+				// Put the received samples into the usbQueue, so that they can be read by the
+				// conversion thread (or the application if in raw mode)
 				try {
 					if (!this.usbQueue.offer(buffer.array(), 1000, TimeUnit.MILLISECONDS)) {
 						// We hit the timeout.
@@ -1169,6 +1188,17 @@ public class Airspy implements Runnable {
 			return null;
 	}
 
+	/**
+	 * This method is needed if packing is enabled on the Airspy.
+	 * It will read bytes from the source array, unpack them
+	 * and write the results to dest. Note the length parameter
+	 * specifies the number of bytes that should be written to
+	 * the destination array and not the number of bytes that will
+	 * be read from the source!
+	 * @param src		source array containing at least length * 3/4 packed bytes
+	 * @param dest		destination array. Size must be greater or equal to length
+	 * @param length	number of bytes that should be written to dest. Must be multiple of 16!
+	 */
 	public static void unpackSamples(byte[] src, byte[] dest, int length) {
 		if (length % 16 != 0) {
 			Log.e(LOGTAG, "convertSamplesFloat: length has to be multiple of 16!");

@@ -441,6 +441,9 @@ public class MainActivity extends ActionBarActivity implements Runnable, Airspy.
 			airspy.setRawMode(false);
 			printOnScreen("ok.\n\n");
 
+			if(packingEnabled)
+				printOnScreen("Packing does not work currently. No idea why!\n\n");
+
 			// Check if external memory is available:
 			if(!Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED))
 			{
