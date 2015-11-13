@@ -1,0 +1,1 @@
+include ':airspy_android', ':airspy_test'
